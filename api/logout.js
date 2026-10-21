@@ -1,7 +1,7 @@
+import { setSession } from "./_lib.js";
+
 export default function handler(req, res) {
-  res.writeHead(303, {
-    "Set-Cookie": "bitacora_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
-    Location: "/login.html",
-  });
+  setSession(res, "");
+  res.writeHead(303, { Location: "/login.html" });
   res.end();
 }
