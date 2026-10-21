@@ -37,55 +37,35 @@ button { font: inherit; font-weight: 600; background: var(--accent); color: var(
 button:disabled { opacity: .6; cursor: default; }
 .hint { font-size: 12px; color: var(--muted); margin: -8px 0 0; }
 .error { color: var(--danger); font-size: 14px; margin: 0; }
-button.link { background: none; color: var(--muted); height: auto; font-weight: 500; font-size: 13px; text-decoration: underline; padding: 0; justify-self: center; }
-button.link:hover { color: var(--ink); }
 </style>
 </head>
 <body>
 <form id="f" novalidate>
   <div>
-    <div class="eyebrow" id="eyebrow">Acceso privado</div>
+    <div class="eyebrow">Acceso privado</div>
     <h1><span>Bitácora</span> del Día</h1>
   </div>
   <p class="lead" id="lead">Cargando…</p>
   <p class="error" id="err" hidden></p>
-  <label id="codeRow" hidden>Código de recuperación
-    <input id="code" autocomplete="off">
+  <label>Usuario o correo
+    <input id="username" name="username" autocomplete="username" minlength="4" maxlength="120" required>
   </label>
-  <label id="userRow">Usuario
-    <input id="username" name="username" autocomplete="username" minlength="4" maxlength="60" required>
-  </label>
-  <label><span id="passLabel">Contraseña</span>
+  <label>Contraseña
     <input id="password" name="password" type="password" autocomplete="current-password" minlength="4" required>
   </label>
-  <label id="confirmRow" hidden>Repite la contraseña
-    <input id="confirm" type="password" autocomplete="new-password" minlength="4">
-  </label>
-  <p class="hint">Mínimo 4 caracteres (letras o números) en cada campo.</p>
+  <p class="hint">Los usuarios se crean y se cambian en Supabase → Authentication → Users.</p>
   <button type="submit" id="go" disabled>Entrar</button>
-  <button type="button" class="link" id="forgot" hidden>¿Olvidaste tu contraseña?</button>
 </form>
 <script>
 (async () => {
   const $ = (id) => document.getElementById(id);
-  let mode = "login";
   const showError = (t) => { $("err").textContent = t; $("err").hidden = !t; };
 
   try {
     const s = await (await fetch("/api/session", { cache: "no-store" })).json();
     if (!s.ready) { $("lead").textContent = s.reason || "El acceso todavía no está configurado."; return; }
     if (s.loggedIn) { location.replace("/"); return; }
-    if (!s.hasUser) {
-      mode = "signup";
-      $("eyebrow").textContent = "Primera vez";
-      $("lead").textContent = "Crea tu usuario y contraseña. Solo se puede crear una cuenta: después el sitio queda cerrado para cualquier otra persona.";
-      $("confirmRow").hidden = false;
-      $("password").autocomplete = "new-password";
-      $("go").textContent = "Crear cuenta";
-    } else {
-      $("lead").textContent = "Entra con tu usuario y contraseña.";
-      $("forgot").hidden = false;
-    }
+    $("lead").textContent = "Entra con tu usuario y contraseña.";
     $("go").disabled = false;
     $("username").focus();
   } catch {
@@ -93,51 +73,13 @@ button.link:hover { color: var(--ink); }
     return;
   }
 
-  function setReset(on) {
-    mode = on ? "reset" : "login";
-    showError("");
-    $("eyebrow").textContent = on ? "Recuperar acceso" : "Acceso privado";
-    $("lead").textContent = on
-      ? "Escribe el código de recuperación que guardaste en Vercel (RESET_CODE) y tu contraseña nueva. Tus tareas no cambian."
-      : "Entra con tu usuario y contraseña.";
-    $("codeRow").hidden = !on;
-    $("userRow").hidden = on;
-    $("confirmRow").hidden = !on;
-    $("passLabel").textContent = on ? "Contraseña nueva" : "Contraseña";
-    $("password").autocomplete = on ? "new-password" : "current-password";
-    $("go").textContent = on ? "Cambiar contraseña" : "Entrar";
-    $("forgot").textContent = on ? "Volver a entrar" : "¿Olvidaste tu contraseña?";
-    (on ? $("code") : $("username")).focus();
-  }
-  $("forgot").addEventListener("click", () => setReset(mode !== "reset"));
-
   $("f").addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (mode === "reset") {
-      const code = $("code").value.trim(), password = $("password").value;
-      if (!code) return showError("Escribe tu código de recuperación.");
-      if (password.length < 4) return showError("La contraseña nueva necesita mínimo 4 caracteres.");
-      if (password !== $("confirm").value) return showError("Las contraseñas no coinciden.");
-      showError(""); $("go").disabled = true;
-      try {
-        const r = await fetch("/api/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, password }) });
-        const d = await r.json();
-        if (r.ok) {
-          $("lead").textContent = `Listo, contraseña cambiada. Tu usuario es "${d.username}". Entrando…`;
-          setTimeout(() => location.replace("/"), 2500);
-          return;
-        }
-        showError(d.error || "No se pudo cambiar la contraseña.");
-      } catch { showError("No se pudo conectar. Intenta de nuevo."); }
-      $("go").disabled = false;
-      return;
-    }
     const username = $("username").value.trim(), password = $("password").value;
     if (username.length < 4 || password.length < 4) return showError("Usuario y contraseña necesitan mínimo 4 caracteres.");
-    if (mode === "signup" && password !== $("confirm").value) return showError("Las contraseñas no coinciden.");
     showError(""); $("go").disabled = true;
     try {
-      const r = await fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode, username, password }) });
+      const r = await fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) });
       const d = await r.json();
       if (r.ok) { location.replace("/"); return; }
       showError(d.error || "No se pudo entrar.");
