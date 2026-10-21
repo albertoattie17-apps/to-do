@@ -7,6 +7,10 @@ export default async function handler(req, res) {
     const users = await sb("bitacora_users?select=id&limit=1");
     json(res, 200, { ready: true, hasUser: users.length > 0, loggedIn: !!sessionUser(req) });
   } catch (e) {
-    json(res, 200, { ready: false, reason: "Faltan las tablas en Supabase." });
+    console.error(e);
+    const reason = /supabase 401/.test(e.message)
+      ? "Supabase rechazó la llave secreta. Revisa SUPABASE_SECRET_KEY en Vercel."
+      : "Faltan las tablas en Supabase.";
+    json(res, 200, { ready: false, reason });
   }
 }

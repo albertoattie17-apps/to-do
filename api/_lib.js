@@ -4,8 +4,8 @@ import { createHmac, scryptSync, randomBytes, timingSafeEqual } from "node:crypt
 const MONTH = 60 * 60 * 24 * 30;
 
 export function config() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
+  const url = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "").replace(/\s+/g, "");
   return url && key ? { url: url.replace(/\/$/, ""), key } : null;
 }
 
@@ -14,7 +14,8 @@ export async function sb(path, { method = "GET", body, prefer } = {}) {
   const c = config();
   if (!c) throw new Error("config");
   const headers = { apikey: c.key, "content-type": "application/json" };
-  if (!c.key.startsWith("sb_")) headers.authorization = `Bearer ${c.key}`;
+  // las llaves nuevas (sb_secret_…) van solo en apikey; las antiguas (JWT) también como Bearer
+  if (c.key.startsWith("eyJ")) headers.authorization = `Bearer ${c.key}`;
   if (prefer) headers.prefer = prefer;
   const r = await fetch(`${c.url}/rest/v1/${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const text = await r.text();
