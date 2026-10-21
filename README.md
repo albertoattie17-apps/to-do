@@ -2,15 +2,17 @@
 
 Agenda y lista de tareas diaria: tareas con hora y categoría, progreso del día, vista semanal, pasar pendientes a mañana y notas por día.
 
-Es un sitio estático (un solo `index.html`, sin build). Los datos se guardan en el navegador (`localStorage`), así que cada dispositivo tiene su propia lista.
+- `index.html`: la app. Lee y guarda cada día con `/api/day`.
+- `login.html`: la primera vez crea la cuenta (solo se permite una); después pide usuario y contraseña (mínimo 4 caracteres).
+- `middleware.js`: sin sesión válida, todas las páginas mandan a `/login.html`.
+- `api/`: funciones de Vercel que hablan con Supabase usando la llave secreta del servidor.
+- `supabase.sql`: las tablas. Se pegan una vez en Supabase → SQL Editor → Run.
 
-## Desplegar en Vercel
+## Configuración en Vercel
 
-1. Sube este repo a GitHub.
-2. En [vercel.com/new](https://vercel.com/new) importa el repo.
-3. Framework Preset: **Other**. Sin comando de build. Deploy.
+Conecta un proyecto de Supabase en **Storage**. Vercel agrega `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` (o `SUPABASE_SECRET_KEY`). Opcional: `SESSION_SECRET` para firmar las sesiones con otra llave.
 
-Cada `git push` a `main` vuelve a desplegar el sitio.
+Las contraseñas se guardan cifradas (scrypt) en Supabase, nunca en este repo. Cada `git push` a `main` vuelve a desplegar el sitio.
 
 ## Atajos
 

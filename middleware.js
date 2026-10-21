@@ -1,36 +1,30 @@
-// Protege todo el sitio: sin la cookie de sesión correcta, manda a /login.html.
-// El usuario y la contraseña viven en las variables de entorno AUTH_USER y AUTH_PASS de Vercel.
+// Protege las páginas: sin una sesión válida (cookie firmada por /api/login), manda a /login.html.
+// Las funciones de /api revisan la sesión por su cuenta.
 
-const PUBLIC = ["/login.html", "/api/login", "/api/logout", "/favicon.ico"];
+const PUBLIC = ["/login.html", "/favicon.ico"];
 
-async function sha256(text) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+function secret() {
+  return process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
 }
 
-function readCookie(header, name) {
-  for (const part of (header || "").split(";")) {
-    const [k, ...v] = part.trim().split("=");
-    if (k === name) return v.join("=");
-  }
-  return null;
+async function hmac(key, text) {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(text));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function validSession(cookieHeader) {
+  const m = (cookieHeader || "").match(/(?:^|;\s*)bitacora_session=([^;]+)/);
+  const key = secret();
+  if (!m || !key) return false;
+  const [id, exp, sig] = m[1].split(".");
+  if (!id || !exp || !sig || Number(exp) < Date.now()) return false;
+  return (await hmac(key, `${id}.${exp}`)) === sig;
 }
 
 export default async function middleware(request) {
   const url = new URL(request.url);
-  if (PUBLIC.includes(url.pathname)) return;
-
-  const user = process.env.AUTH_USER || "";
-  const pass = process.env.AUTH_PASS || "";
-  if (user.length < 4 || pass.length < 4) {
-    return new Response("Falta configurar AUTH_USER y AUTH_PASS (mínimo 4 caracteres) en Vercel.", {
-      status: 503,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    });
-  }
-
-  const expected = await sha256(`${user}:${pass}:bitacora`);
-  if (readCookie(request.headers.get("cookie"), "bitacora_session") === expected) return;
-
+  if (PUBLIC.includes(url.pathname) || url.pathname.startsWith("/api/")) return;
+  if (await validSession(request.headers.get("cookie"))) return;
   return Response.redirect(new URL("/login.html", url), 302);
 }

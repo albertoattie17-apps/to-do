@@ -230,41 +230,48 @@ h1 .wd { color: var(--accent); }
   const nowHM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
   // ---------- almacenamiento ----------
-  // db privado por persona (data/users/<id>/<fecha>); si no hay db, se guarda en este navegador
-  let db = null, uid = null;
-  const LS = "bitacora:";
-  const lsGet = (k) => { try { return JSON.parse(localStorage.getItem(LS + k)) || null; } catch { return null; } };
-  const lsSet = (k, v) => { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch {} };
+  // cada día es una fila en Supabase; el navegador habla solo con /api/day (requiere sesión)
   const blank = () => ({ tasks: [], notes: "" });
   const norm = (d) => ({ tasks: Array.isArray(d?.tasks) ? d.tasks : [], notes: typeof d?.notes === "string" ? d.notes : "" });
-  const ref = (k) => db.collection("data/users/" + uid).doc(k);
+  const clone = (v) => JSON.parse(JSON.stringify(v));
 
-  const writers = {}; // una escritura a la vez por documento, siempre la última versión
+  async function api(url, opts) {
+    const r = await fetch(url, { cache: "no-store", ...opts });
+    if (r.status === 401) { location.href = "/login.html"; throw new Error("auth"); }
+    if (!r.ok) throw new Error("http " + r.status);
+    return r.json();
+  }
+  const writers = {}; // una escritura a la vez por día, siempre la última versión
+  const pendingWrite = (k) => !!(writers[k] && (writers[k].busy || writers[k].next));
+  async function fetchRange(from, to) {
+    const { days } = await api(`/api/day?from=${from}&to=${to}`);
+    for (let k = from; k <= to; k = addDays(k, 1)) if (!pendingWrite(k)) weekCache[k] = norm(days[k]);
+  }
   function save(k, data) {
-    const copy = JSON.parse(JSON.stringify(data));
+    const copy = clone(data);
     weekCache[k] = copy;
-    if (!db) { lsSet(k, copy); return; }
     const w = writers[k] || (writers[k] = { busy: false, next: null });
     w.next = copy;
     if (w.busy) return;
     (async function loop() {
       w.busy = true;
+      setSync("Guardando…");
       while (w.next) {
         const body = w.next; w.next = null;
-        try { await ref(k).set(body); setSync("Guardado"); }
-        catch (e) {
-          if (e && e.code === "unavailable") { w.next = w.next || body; await new Promise(r => setTimeout(r, 800 + Math.random() * 800)); }
-          else if (e && e.code === "quota_exceeded") { toast("No hay espacio para más días. Borra días antiguos."); }
-          else { setSync("No se pudo guardar"); toast("No se pudo guardar este cambio."); }
+        try {
+          await api("/api/day", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ date: k, data: body }) });
+          setSync("Guardado");
+        } catch (e) {
+          if (e.message === "auth") return;
+          setSync("No se pudo guardar"); toast("No se pudo guardar este cambio. Revisa tu conexión.");
         }
       }
       w.busy = false;
     })();
   }
   async function load(k) {
-    if (weekCache[k]) return weekCache[k];
-    if (!db) return norm(lsGet(k));
-    try { const s = await ref(k).get(); return norm(s.exists ? s.data() : null); } catch { return blank(); }
+    if (!weekCache[k]) await fetchRange(k, k);
+    return weekCache[k] || blank();
   }
 
   // ---------- estado ----------
@@ -272,29 +279,29 @@ h1 .wd { color: var(--accent); }
   let day = blank();
   let filter = "todas";
   let editing = null;
-  let unsub = null;
+  let loading = true;
+  let loadSeq = 0;
   const weekCache = {};
 
-  function setSync(t) { $("syncState").textContent = (db ? "Sincronizado en tu cuenta · " : "Guardado en este navegador · ") + t; }
+  function setSync(t) { $("syncState").textContent = "Guardado en tu cuenta · " + t; }
   let toastT;
   function toast(t) { const el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 2600); }
 
   function openDay(k) {
     current = k; editing = null;
-    if (unsub) { unsub(); unsub = null; }
-    day = weekCache[k] ? norm(weekCache[k]) : (db ? blank() : norm(lsGet(k)));
-    if (!db) weekCache[k] = day;
+    loading = !weekCache[k];
+    day = weekCache[k] ? clone(weekCache[k]) : blank();
     render(); renderWeek();
-    if (db) {
-      unsub = ref(k).onSnapshot((s) => {
-        if (k !== current) return;
-        const fresh = norm(s.exists ? s.data() : null);
-        weekCache[k] = fresh;
-        if (writers[k]?.busy || writers[k]?.next) return; // no pisar cambios locales en curso
-        day = JSON.parse(JSON.stringify(fresh));
-        render(); renderWeekBars();
-      }, () => setSync("Sin conexión con el guardado"));
-    }
+    const start = weekStart(k), seq = ++loadSeq;
+    fetchRange(start, addDays(start, 6)).then(() => {
+      if (seq !== loadSeq) return;
+      loading = false;
+      if (!pendingWrite(k)) day = clone(weekCache[k] || blank()); // no pisar cambios locales en curso
+      render(); renderWeekBars(); setSync("Al día");
+    }).catch((e) => {
+      if (e.message === "auth" || seq !== loadSeq) return;
+      setSync("Sin conexión"); toast("No se pudieron cargar tus tareas. Recarga la página.");
+    });
   }
 
   function commit() { save(current, day); render(); renderWeekBars(); }
@@ -344,6 +351,12 @@ h1 .wd { color: var(--accent); }
 
     // lista
     const list = $("list"); list.innerHTML = "";
+    $("notes").disabled = loading;
+    if (!total && loading) {
+      list.innerHTML = `<div class="empty"><p>Cargando tus tareas…</p></div>`;
+      $("notes").value = "";
+      return;
+    }
     if (!total) {
       const e = document.createElement("div"); e.className = "empty";
       e.innerHTML = `<h3>Nada anotado para este día</h3><p>Escribe arriba lo que tienes que hacer, con hora si quieres que aparezca en la agenda. Puedes empezar con una de estas:</p><div class="suggest"></div>`;
@@ -434,7 +447,6 @@ h1 .wd { color: var(--accent); }
       b.innerHTML = `<span class="dn">${d.toLocaleDateString("es", { weekday: "short" }).replace(".", "")}</span><span class="dd">${d.getDate()}</span><span class="bar"><i></i></span>`;
       b.onclick = () => openDay(k);
       w.appendChild(b);
-      if (!weekCache[k] && k !== current) load(k).then(v => { weekCache[k] = v; renderWeekBars(); });
     }
     renderWeekBars();
   }
@@ -456,6 +468,7 @@ h1 .wd { color: var(--accent); }
   $("newCat").value = "personal";
   $("addForm").addEventListener("submit", (e) => {
     e.preventDefault();
+    if (loading) { toast("Espera a que carguen tus tareas."); return; }
     const text = $("newText").value.trim(); if (!text) { $("newText").focus(); return; }
     addTask(text, $("newTime").value, $("newCat").value);
     $("newText").value = ""; $("newTime").value = ""; $("newText").focus();
@@ -467,7 +480,9 @@ h1 .wd { color: var(--accent); }
   $("rollover").onclick = async () => {
     const tomorrow = addDays(current, 1);
     const moving = day.tasks.filter(x => !x.done);
-    const target = norm(JSON.parse(JSON.stringify(await load(tomorrow))));
+    let target;
+    try { target = norm(clone(await load(tomorrow))); }
+    catch (e) { if (e.message !== "auth") toast("No se pudo abrir mañana. Intenta de nuevo."); return; }
     target.tasks.push(...moving.map(x => ({ ...x, createdAt: Date.now() })));
     save(tomorrow, target);
     day.tasks = day.tasks.filter(x => x.done); commit();
@@ -476,7 +491,7 @@ h1 .wd { color: var(--accent); }
   let notesT;
   $("notes").addEventListener("input", () => {
     clearTimeout(notesT);
-    notesT = setTimeout(() => { if (day.notes !== $("notes").value) { day.notes = $("notes").value; save(current, day); } }, 700);
+    notesT = setTimeout(() => { if (!loading && day.notes !== $("notes").value) { day.notes = $("notes").value; save(current, day); } }, 700);
   });
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, select")) return;
@@ -487,8 +502,8 @@ h1 .wd { color: var(--accent); }
   setInterval(() => { if (current === todayKey() && !editing) render(); }, 60000);
 
   // ---------- arranque ----------
+  setSync("Cargando…");
   openDay(current);
-  setSync("Listo");
 })();
 </script>
 </body>
