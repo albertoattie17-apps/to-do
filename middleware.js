@@ -4,7 +4,8 @@
 const PUBLIC = ["/login.html", "/favicon.ico"];
 
 function secret() {
-  return process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
+  // igual que api/_lib.js: la llave sin espacios, para que las firmas coincidan
+  return process.env.SESSION_SECRET || (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "").replace(/\s+/g, "");
 }
 
 async function hmac(key, text) {
