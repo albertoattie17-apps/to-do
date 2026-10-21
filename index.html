@@ -88,6 +88,8 @@ h1 .wd { color: var(--accent); }
 .sum-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
 .ghost { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 6px 12px; font-size: 13px; color: var(--muted); }
 .ghost:hover { color: var(--ink); border-color: var(--muted); }
+.account { display: flex; justify-content: flex-end; margin-bottom: -10px; }
+.account .ghost { text-decoration: none; }
 
 /* Captura */
 .add { background: var(--sheet); border: 1px solid var(--line); border-radius: 14px; padding: 10px; display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; }
@@ -155,6 +157,9 @@ h1 .wd { color: var(--accent); }
 <body>
 
 <div class="wrap">
+  <div class="account">
+    <a class="ghost" href="/api/logout">Cerrar sesión</a>
+  </div>
   <header class="top">
     <div>
       <div class="eyebrow" id="eyebrow">Hoy</div>
@@ -202,7 +207,7 @@ h1 .wd { color: var(--accent); }
 
   <div class="foot">
     <span id="syncState">Cargando…</span>
-    <span>Doble clic en una tarea para editarla · <a href="/api/logout" style="color:inherit">Cerrar sesión</a></span>
+    <span>Doble clic en una tarea para editarla</span>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
